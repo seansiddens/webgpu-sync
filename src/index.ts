@@ -3,7 +3,7 @@ import occupancyDiscoveryCode from './occupancy_discovery.wgsl';
 
 const NUM_ITERS = 256;
 
-function coefficientOfVariation(arr: Int32Array) {
+function coefficientOfVariation(arr: number[]) {
     // Check if array is empty or has a length of 1
     if (arr.length <= 1) {
         throw new Error('Array should have at least two elements for meaningful CV computation.');
@@ -17,7 +17,7 @@ function coefficientOfVariation(arr: Int32Array) {
     const stdDeviation = Math.sqrt(variance);
 
     // Calculate coefficient of variation
-    const cv = (stdDeviation / mean) * 100;
+    const cv = (stdDeviation / mean);
 
     return cv;
 }
@@ -128,7 +128,7 @@ async function ticketLockTest(device: GPUDevice) {
 
         await histReadBuf.mapAsync(GPUMapMode.READ);
         const histArray = new Int32Array(histReadBuf.getMappedRange());
-        console.log('Coefficient of variation: %f', coefficientOfVariation(histArray));
+        console.log('Coefficient of variation: %f', coefficientOfVariation(Array.from(histArray)));
         console.log('Elapsed time: %dms\n', performance.now() - start);
         counterReadBuf.unmap();
     });
@@ -137,8 +137,8 @@ async function ticketLockTest(device: GPUDevice) {
 async function occupancyDiscoveryTest(device: GPUDevice) {
     // Create buffers
     const numWorkgroups = 1024;
-    console.log('Starting the occupancy discovery test with %d workgroups', 
-        numWorkgroups);
+    // console.log('Starting the occupancy discovery test with %d workgroups', 
+    //     numWorkgroups);
 
     const countBuf = device.createBuffer({
         size: 4,
@@ -215,9 +215,11 @@ async function occupancyDiscoveryTest(device: GPUDevice) {
     // Read the result back from the resultBuffer
     await countReadBuf.mapAsync(GPUMapMode.READ);
     const occupancy = new Int32Array(countReadBuf.getMappedRange());
-    console.log('Estimated occupancy bound: %d', occupancy[0]);
-    console.log('Elapsed time: %dms\n', performance.now() - start);
+    const res = occupancy[0];
+    // console.log('Estimated occupancy bound: %d', occupancy[0]);
+    // console.log('Elapsed time: %dms\n', performance.now() - start);
     countReadBuf.unmap();
+    return res;
 }
 
 async function globalBarrierTest() {
@@ -247,7 +249,18 @@ async function main() {
 
     // await ticketLockTest(device);
 
-    // await occupancyDiscoveryTest(device);
+    const numTrials = 256;
+    let results: any[] = []
+    for (let i = 0; i < numTrials; i++) {
+        let res = await occupancyDiscoveryTest(device);
+        results.push(res);
+    }
+    let maxOccupancy = Math.max(...results);
+    let average = results.reduce((acc, curr) => acc + curr, 0) / numTrials;
+    let variance = coefficientOfVariation(results);
+    console.log('Max occupancy bound: %f', maxOccupancy);
+    console.log('Average occupancy bound', average);
+    console.log('Occupancy bound coeff. of variation: %f', variance);
 
 }
 
