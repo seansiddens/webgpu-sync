@@ -1,4 +1,5 @@
-import computeShaderCode from './ticket_lock.wgsl';
+import ticketLockCode from './ticket_lock.wgsl';
+import occupancyDiscoveryCode from './occupancy_discovery.wgsl';
 
 const NUM_ITERS = 256;
 
@@ -62,7 +63,7 @@ async function ticketLockTest(device: GPUDevice) {
         layout: 'auto',
         compute: {
             module: device.createShaderModule({
-                code: computeShaderCode,
+                code: ticketLockCode,
             }),
             entryPoint: 'main',
         }
@@ -133,6 +134,96 @@ async function ticketLockTest(device: GPUDevice) {
     });
 }
 
+async function occupancyDiscoveryTest(device: GPUDevice) {
+    // Create buffers
+    const numWorkgroups = 1024;
+    console.log('Starting the occupancy discovery test with %d workgroups', 
+        numWorkgroups);
+
+    const countBuf = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    
+    const pollOpenBuf = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.STORAGE,
+    });
+
+    const MBuf = device.createBuffer({
+        size: numWorkgroups * 4,
+        usage: GPUBufferUsage.STORAGE,
+    });
+
+    const nextTicketBuf = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.STORAGE,
+    });
+
+    const nowServingBuf = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.STORAGE,
+    });
+
+    // Create compute pipeline.
+    const computePipeline = device.createComputePipeline({
+        layout: 'auto',
+        compute: {
+            module: device.createShaderModule({
+                code: occupancyDiscoveryCode,
+            }),
+            entryPoint: 'main',
+        }
+    });
+
+    // Queue commands.
+    const commandEncoder = device.createCommandEncoder();
+    const computePass = commandEncoder.beginComputePass();
+    computePass.setPipeline(computePipeline);
+    computePass.setBindGroup(0, device.createBindGroup({
+        layout: computePipeline.getBindGroupLayout(0),
+        entries: [
+            {binding: 0, resource: {buffer: countBuf}},
+            {binding: 1, resource: {buffer: pollOpenBuf}},
+            {binding: 2, resource: {buffer: MBuf}},
+            {binding: 3, resource: {buffer: nextTicketBuf}},
+            {binding: 4, resource: {buffer: nowServingBuf}},
+        ],
+    }));
+    computePass.dispatchWorkgroups(numWorkgroups);
+    computePass.end();
+
+    // Get a GPU buffer for reading in an unmapped state.
+    const countReadBuf = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+    });
+    // Encode commands for copying to buffer.
+    commandEncoder.copyBufferToBuffer(
+        countBuf, // src
+        0,
+        countReadBuf, // dst
+        0,
+        4, // size
+    );
+
+    // Submit the commands.
+    const start = performance.now();
+    device.queue.submit([commandEncoder.finish()]);
+    await device.queue.onSubmittedWorkDone();
+
+    // Read the result back from the resultBuffer
+    await countReadBuf.mapAsync(GPUMapMode.READ);
+    const occupancy = new Int32Array(countReadBuf.getMappedRange());
+    console.log('Estimated occupancy bound: %d', occupancy[0]);
+    console.log('Elapsed time: %dms\n', performance.now() - start);
+    countReadBuf.unmap();
+}
+
+async function globalBarrierTest() {
+
+}
+
 async function main() {
     const canvas = document.querySelector('canvas')!;
     const context = canvas.getContext('webgpu');
@@ -154,7 +245,9 @@ async function main() {
     console.log('Max workgroups: %d', device.limits.maxComputeWorkgroupsPerDimension);
     console.log('Max workgroup size: %d', device.limits.maxComputeWorkgroupSizeX);
 
-    ticketLockTest(device);
+    // await ticketLockTest(device);
+
+    // await occupancyDiscoveryTest(device);
 
 }
 
