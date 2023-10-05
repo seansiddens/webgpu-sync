@@ -1,7 +1,4 @@
-import computeShaderCode from './compute.wgsl';
-
-const VECTOR_SIZE = 1024;
-
+import computeShaderCode from './ticket_lock.wgsl';
 
 async function main() {
     const canvas = document.querySelector('canvas')!;
@@ -10,7 +7,6 @@ async function main() {
     if (!context) {
         console.error("WebGPU is not supported!");
         throw new Error("WebGPU is not supported!");
-        return;
     }
 
     console.log("Successfully created WebGPU context!");
@@ -20,43 +16,24 @@ async function main() {
     const adapter = await gpu.requestAdapter();
     if (!adapter) {
         throw new Error('WebGPU not supported.');
-        return;
     }
     const device = await adapter.requestDevice();
     console.log('Max workgroups: %d', device.limits.maxComputeWorkgroupsPerDimension);
     console.log('Max workgroup size: %d', device.limits.maxComputeWorkgroupSizeX);
 
     // Create buffers
-    const bufferLength = VECTOR_SIZE;
-    const aData = new Float32Array(VECTOR_SIZE);
-    for (let i = 0; i < aData.length; i++) {
-        aData[i] = i;
-    }
-    const bData = new Float32Array(VECTOR_SIZE);
-    for (let i = 0; i < aData.length; i++) {
-        bData[i] = i + 2.0;
-    }
-    const resultData = new Float32Array(bufferLength);
-
-    const aBuffer = device.createBuffer({
-        size: aData.byteLength,
-        usage: GPUBufferUsage.STORAGE,
-        mappedAtCreation: true,
-    });
-    new Float32Array(aBuffer.getMappedRange()).set(aData);
-    aBuffer.unmap();
-
-    const bBuffer = device.createBuffer({
-        size: bData.byteLength,
-        usage: GPUBufferUsage.STORAGE,
-        mappedAtCreation: true,
-    });
-    new Float32Array(bBuffer.getMappedRange()).set(bData);
-    bBuffer.unmap();
-
-    const resultBuffer = device.createBuffer({
-        size: resultData.byteLength,
+    const numWorkgroups = 64;
+    const counter = device.createBuffer({
+        size: 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    const nowServing = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.STORAGE
+    });
+    const nextTicket = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.STORAGE
     });
 
     // Create compute pipeline.
@@ -77,26 +54,26 @@ async function main() {
     computePass.setBindGroup(0, device.createBindGroup({
         layout: computePipeline.getBindGroupLayout(0),
         entries: [
-            {binding: 0, resource: {buffer: aBuffer}},
-            {binding: 1, resource: {buffer: bBuffer}},
-            {binding: 2, resource: {buffer: resultBuffer}},
+            {binding: 0, resource: {buffer: counter}},
+            {binding: 1, resource: {buffer: nextTicket}},
+            {binding: 2, resource: {buffer: nowServing}}
         ],
     }));
-    computePass.dispatchWorkgroups(bufferLength);
+    computePass.dispatchWorkgroups(numWorkgroups);
     computePass.end();
 
     // Get a GPU buffer for reading in an unmapped state.
     const gpuReadBuffer = device.createBuffer({
-        size: resultData.byteLength,
+        size: 4,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
     });
     // Encode commands for copying to buffer.
     commandEncoder.copyBufferToBuffer(
-        resultBuffer, // src
+        counter, // src
         0,
         gpuReadBuffer, // dst
         0,
-        resultData.byteLength, // size
+        4, // size
     );
 
     // Submit the commands.
@@ -105,14 +82,10 @@ async function main() {
     // Read the result back from the resultBuffer
     device.queue.onSubmittedWorkDone().then(async () => {
         await gpuReadBuffer.mapAsync(GPUMapMode.READ);
-        const resultArray = new Float32Array(gpuReadBuffer.getMappedRange());
-        // Check that the output is what is expected.
-        for (let i = 0; i < resultArray.length; i++) {
-            console.assert(resultArray[i] == i + i + 2);
-        }
+        const resultArray = new Int32Array(gpuReadBuffer.getMappedRange());
+        console.log(resultArray)
         gpuReadBuffer.unmap();
     });
-
 }
 
 main();
