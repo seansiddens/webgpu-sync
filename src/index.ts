@@ -2,7 +2,7 @@ import ticketLockCode from './ticket_lock.wgsl';
 import occupancyDiscoveryCode from './occupancy_discovery.wgsl';
 import globalBarrierCode from './global_barrier.wgsl'
 
-const NUM_ITERS = 512;
+const NUM_ITERS = 1024 * 1;
 
 function coefficientOfVariation(arr: number[]) {
     // Check if array is empty or has a length of 1
@@ -25,9 +25,10 @@ function coefficientOfVariation(arr: number[]) {
 
 async function ticketLockTest(device: GPUDevice) {
     // Create buffers
-    const numWorkgroups = 1024 * 1;
+    const numWorkgroups = 1024 * 2;
     console.log("Running the ticket lock test with %d workgroups for %d iterations", 
         numWorkgroups, NUM_ITERS);
+    console.log("Expected counter value: %d", numWorkgroups * NUM_ITERS);
 
     const counter = device.createBuffer({
         size: 4,
@@ -385,7 +386,7 @@ async function main() {
     console.log('Max workgroups: %d', device.limits.maxComputeWorkgroupsPerDimension);
     console.log('Max workgroup size: %d', device.limits.maxComputeWorkgroupSizeX);
 
-    // await ticketLockTest(device);
+    await ticketLockTest(device);
 
     // const numTrials = 256;
     // let results: any[] = []
@@ -400,7 +401,7 @@ async function main() {
     // console.log('Average occupancy bound', average);
     // console.log('Occupancy bound coeff. of variation: %f', variance);
 
-    await globalBarrierTest(device);
+    // await globalBarrierTest(device);
 
 }
 

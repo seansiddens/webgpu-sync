@@ -102,6 +102,10 @@ fn main(
     // p_global_size = u32(count) * WORKGROUP_SIZE;
 
     const use_barrier: bool = true;
+    
+    if (!use_barrier) {
+        return;
+    }
 
     for (var i = 0; i < i32(num_iters); i++) {
         // Each workgroup will write to a location in a global buffer, offset each
